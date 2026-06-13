@@ -1,90 +1,72 @@
 import streamlit as st
 from googleapiclient.discovery import build
-import pandas as pd
+from urllib.parse import urlparse, parse_qs
+from collections import Counter
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-from collections import Counter
-import re
+import pandas as pd
 import requests
 import os
-from urllib.parse import urlparse, parse_qs
+import re
 
 st.set_page_config(
 page_title="YouTube Comment Analyzer",
 layout="wide"
 )
 
-st.markdown("""
-
-<style>
-
-.stApp{
-background:#fafafa;
-}
-
-.block{
-background:white;
-padding:24px;
-border-radius:18px;
-box-shadow:0 6px 24px rgba(0,0,0,.08);
-}
-
-</style>
-
-""", unsafe_allow_html=True)
-
-st.markdown("""
-
-<div class="block">
-
-# YouTube Comment Analyzer
-
-유튜브 링크만 넣으면 댓글을 분석합니다.
-
-</div>
-
-""", unsafe_allow_html=True)
+st.title("YouTube Comment Analyzer")
+st.caption("댓글 분석 · 키워드 · 워드클라우드")
 
 api_key = st.text_input(
 "YouTube API Key",
 type="password"
 )
 
-url = st.text_input(
+video_url = st.text_input(
 "YouTube URL"
 )
 
-FONT = "NotoSansKR.ttf"
+FONT_PATH = "NotoSansKR.ttf"
 
-if not os.path.exists(FONT):
+def prepare_font():
 
 ```
-font_url = (
+if os.path.exists(FONT_PATH):
+    return
+
+url = (
     "https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR-Regular.ttf"
 )
 
-r = requests.get(font_url)
+r = requests.get(
+    url,
+    timeout=20
+)
 
 with open(
-    FONT,
+    FONT_PATH,
     "wb"
 ) as f:
 
-    f.write(r.content)
+    f.write(
+        r.content
+    )
 ```
 
-def get_video_id(link):
+def extract_video_id(url):
 
 ```
-if "youtu.be/" in link:
+if "youtu.be/" in url:
 
     return (
-        link
+        url
         .split("youtu.be/")[1]
         .split("?")[0]
     )
 
-parsed = urlparse(link)
+parsed = urlparse(
+    url
+)
 
 q = parse_qs(
     parsed.query
@@ -97,50 +79,51 @@ if "v" in q:
 return None
 ```
 
-def get_comments(youtube, video):
+def get_comments(youtube, video_id):
 
 ```
 comments = []
 
-req = (
+request = (
     youtube
     .commentThreads()
     .list(
         part="snippet",
-        videoId=video,
+        videoId=video_id,
         maxResults=100,
         textFormat="plainText"
     )
 )
 
-while req:
+while request:
 
-    res = req.execute()
+    response = request.execute()
 
-    for item in res["items"]:
+    items = response.get(
+        "items",
+        []
+    )
 
-        txt = (
-            item[
-                "snippet"
-            ][
-                "topLevelComment"
-            ][
-                "snippet"
-            ][
-                "textDisplay"
-            ]
+    for item in items:
+
+        text = (
+            item
+            ["snippet"]
+            ["topLevelComment"]
+            ["snippet"]
+            ["textDisplay"]
         )
 
         comments.append(
-            txt
+            text
         )
 
-    req = (
+    request = (
         youtube
         .commentThreads()
         .list_next(
-            req,
-            res
+            request,
+            response
         )
     )
 
@@ -165,7 +148,7 @@ use_container_width=True
 ```
 try:
 
-    if not api_key:
+    if api_key == "":
 
         st.error(
             "API Key 입력"
@@ -173,17 +156,19 @@ try:
 
         st.stop()
 
-    video = get_video_id(
-        url
+    video_id = extract_video_id(
+        video_url
     )
 
-    if video is None:
+    if video_id is None:
 
         st.error(
-            "유효한 유튜브 링크"
+            "유효한 유튜브 링크 입력"
         )
 
         st.stop()
+
+    prepare_font()
 
     youtube = build(
         "youtube",
@@ -193,13 +178,13 @@ try:
 
     comments = get_comments(
         youtube,
-        video
+        video_id
     )
 
     if len(comments) == 0:
 
         st.warning(
-            "댓글 없음"
+            "댓글을 찾지 못함"
         )
 
         st.stop()
@@ -218,21 +203,16 @@ try:
     )
 
     wc = WordCloud(
-
-        font_path=FONT,
-
         width=1800,
-
         height=900,
-
-        background_color="white"
-
+        background_color="white",
+        font_path=FONT_PATH
     ).generate(
         text
     )
 
     fig, ax = plt.subplots(
-        figsize=(14,8)
+        figsize=(14, 8)
     )
 
     ax.imshow(
@@ -244,38 +224,37 @@ try:
     )
 
     st.subheader(
-        "워드클라우드"
+        "Word Cloud"
     )
 
     st.pyplot(
         fig
     )
 
-    words = (
+    top = (
         Counter(
             text.split()
         )
-        .most_common(
-            20
-        )
+        .most_common(20)
     )
 
     st.subheader(
-        "키워드"
+        "Top Keywords"
     )
 
     st.dataframe(
         pd.DataFrame(
-            words,
+            top,
             columns=[
-                "단어",
-                "횟수"
+                "Word",
+                "Count"
             ]
-        )
+        ),
+        use_container_width=True
     )
 
     st.subheader(
-        "대표 댓글"
+        "Representative Comments"
     )
 
     for c in comments[:10]:
