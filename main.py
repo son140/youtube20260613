@@ -1,15 +1,16 @@
 import streamlit as st
 from googleapiclient.discovery import build
-from wordcloud import WordCloud
-import matplotlib.pyplot as plt
 import pandas as pd
 from collections import Counter
-from urllib.parse import urlparse, parse_qs
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
 import re
+from urllib.parse import urlparse, parse_qs
+import requests
+import os
 
 st.set_page_config(
-    page_title="YouTube Comment Intelligence",
-    page_icon="▶",
+    page_title="YouTube Comment Analyzer",
     layout="wide"
 )
 
@@ -20,25 +21,16 @@ st.markdown("""
 background:
 linear-gradient(
 180deg,
-#0f1117,
-#161a24
+#fafafa,
+#ffffff
 );
 }
 
-.card{
-background:#171c28;
+.box{
+background:white;
 padding:28px;
-border-radius:22px;
-}
-
-.big{
-font-size:42px;
-font-weight:800;
-color:white;
-}
-
-.sub{
-color:#aeb7c9;
+border-radius:18px;
+box-shadow:0 6px 24px rgba(0,0,0,.08);
 }
 
 </style>
@@ -46,80 +38,109 @@ color:#aeb7c9;
 unsafe_allow_html=True)
 
 st.markdown("""
+<div class='box'>
 
-<div class="card">
+# YouTube Comment Analyzer
 
-<div class="big">
-YouTube Comment Intelligence
-</div>
-
-<div class="sub">
-Deep Comment Analytics
-</div>
+댓글 기반 키워드 분석
 
 </div>
-
 """,
 unsafe_allow_html=True)
 
-api_key = st.text_input(
+API_KEY = st.text_input(
 "YouTube API Key",
 type="password"
 )
 
 url = st.text_input(
-"YouTube URL"
+"유튜브 링크 입력"
 )
 
-def get_video_id(link):
+FONT_URL = (
+"https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR-Regular.ttf"
+)
+
+FONT_FILE = "NotoSansKR.ttf"
+
+if not os.path.exists(FONT_FILE):
+
+    r = requests.get(FONT_URL)
+
+    with open(
+        FONT_FILE,
+        "wb"
+    ) as f:
+
+        f.write(
+            r.content
+        )
+
+
+def get_id(link):
 
     if "youtu.be/" in link:
-        return link.split("/")[-1]
 
-    parsed = urlparse(link)
+        return (
+            link
+            .split("/")
+            [-1]
+        )
 
-    q = parse_qs(parsed.query)
+    parsed = urlparse(
+        link
+    )
 
-    return q.get(
-        "v",
-        [None]
-    )[0]
-
-
-def clean(text):
-
-    return re.sub(
-        r"[^\w가-힣 ]",
-        "",
-        text
+    return (
+        parse_qs(
+            parsed.query
+        )
+        .get(
+            "v",
+            [None]
+        )[0]
     )
 
 
 def fetch(youtube, vid):
 
-    request = youtube.commentThreads().list(
-        part="snippet",
-        videoId=vid,
-        maxResults=100,
-        textFormat="plainText"
-    )
-
     comments=[]
+
+    request=(
+        youtube
+        .commentThreads()
+        .list(
+
+part="snippet",
+
+videoId=vid,
+
+maxResults=100,
+
+textFormat="plainText"
+
+)
+)
 
     while request:
 
         response=request.execute()
 
-        for i in response["items"]:
+        for item in response["items"]:
 
             comments.append(
 
-                i["snippet"]
-                ["topLevelComment"]
-                ["snippet"]
-                ["textDisplay"]
+item[
+"snippet"
+][
+"topLevelComment"
+][
+"snippet"
+][
+"textDisplay"
+]
 
-            )
+)
 
         request=(
             youtube
@@ -133,8 +154,17 @@ def fetch(youtube, vid):
     return comments
 
 
+def clean(text):
+
+    return re.sub(
+        r"[^\w가-힣 ]",
+        "",
+        text
+    )
+
+
 if st.button(
-"Analyze",
+"분석 시작",
 use_container_width=True
 ):
 
@@ -143,10 +173,12 @@ use_container_width=True
         youtube = build(
             "youtube",
             "v3",
-            developerKey=api_key
+            developerKey=API_KEY
         )
 
-        video = get_video_id(url)
+        video = get_id(
+            url
+        )
 
         comments = fetch(
             youtube,
@@ -154,7 +186,7 @@ use_container_width=True
         )
 
         st.metric(
-            "Comments",
+            "댓글 수",
             len(comments)
         )
 
@@ -168,57 +200,74 @@ use_container_width=True
 
         wc = WordCloud(
 
-            width=1800,
+font_path=FONT_FILE,
 
-            height=900,
+width=1800,
 
-            font_path=None,
+height=900,
 
-            background_color="white"
+background_color="white"
 
-        ).generate(text)
+).generate(
+text
+)
 
-        fig,ax = plt.subplots(
+        fig,ax=plt.subplots(
             figsize=(14,8)
         )
 
-        ax.imshow(wc)
+        ax.imshow(
+            wc
+        )
 
         ax.axis(
             "off"
         )
 
-        st.pyplot(fig)
+        st.subheader(
+            "워드클라우드"
+        )
 
-        words = (
+        st.pyplot(
+            fig
+        )
+
+        words=(
             Counter(
                 text.split()
             )
-            .most_common(20)
+            .most_common(
+                20
+            )
         )
 
         st.subheader(
-            "Top Keywords"
+            "상위 키워드"
         )
 
         st.dataframe(
-            pd.DataFrame(
-                words,
-                columns=[
-                    "Word",
-                    "Count"
-                ]
-            ),
-            use_container_width=True
-        )
+
+pd.DataFrame(
+words,
+columns=[
+"단어",
+"횟수"
+]
+),
+
+use_container_width=True
+
+)
 
         st.subheader(
-            "Representative Comments"
+            "대표 댓글"
         )
 
         for c in comments[:10]:
 
-            st.info(c)
+            st.info(
+                c
+            )
 
     except Exception as e:
 
