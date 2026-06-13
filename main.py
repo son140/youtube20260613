@@ -3,9 +3,9 @@ from googleapiclient.discovery import build
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import pandas as pd
-import re
 from collections import Counter
 from urllib.parse import urlparse, parse_qs
+import re
 
 st.set_page_config(
     page_title="YouTube Comment Intelligence",
@@ -21,80 +21,109 @@ background:
 linear-gradient(
 180deg,
 #0f1117,
-#171923
+#161a24
 );
-color:white;
 }
 
-.block{
-background:#181b25;
+.card{
+background:#171c28;
 padding:28px;
 border-radius:22px;
 }
 
-.title{
+.big{
 font-size:42px;
 font-weight:800;
+color:white;
 }
 
-.small{
-color:#b7bccd;
+.sub{
+color:#aeb7c9;
 }
 
 </style>
 """,
 unsafe_allow_html=True)
 
-API_KEY = st.secrets["YOUTUBE_API_KEY"]
+st.markdown("""
 
-youtube = build(
-    "youtube",
-    "v3",
-    developerKey=API_KEY
+<div class="card">
+
+<div class="big">
+YouTube Comment Intelligence
+</div>
+
+<div class="sub">
+Deep Comment Analytics
+</div>
+
+</div>
+
+""",
+unsafe_allow_html=True)
+
+api_key = st.text_input(
+"YouTube API Key",
+type="password"
 )
 
+url = st.text_input(
+"YouTube URL"
+)
 
-def get_video_id(url):
+def get_video_id(link):
 
-    if "youtu.be/" in url:
-        return url.split("/")[-1]
+    if "youtu.be/" in link:
+        return link.split("/")[-1]
 
-    parsed = urlparse(url)
+    parsed = urlparse(link)
 
-    if "v" in parse_qs(parsed.query):
-        return parse_qs(parsed.query)["v"][0]
+    q = parse_qs(parsed.query)
 
-    return None
+    return q.get(
+        "v",
+        [None]
+    )[0]
 
 
-def fetch_comments(video_id):
+def clean(text):
 
-    comments = []
+    return re.sub(
+        r"[^\w가-힣 ]",
+        "",
+        text
+    )
+
+
+def fetch(youtube, vid):
 
     request = youtube.commentThreads().list(
         part="snippet",
-        videoId=video_id,
+        videoId=vid,
         maxResults=100,
         textFormat="plainText"
     )
 
+    comments=[]
+
     while request:
 
-        response = request.execute()
+        response=request.execute()
 
-        for item in response["items"]:
+        for i in response["items"]:
 
-            text = (
-                item["snippet"]
+            comments.append(
+
+                i["snippet"]
                 ["topLevelComment"]
                 ["snippet"]
                 ["textDisplay"]
+
             )
 
-            comments.append(text)
-
-        request = (
-            youtube.commentThreads()
+        request=(
+            youtube
+            .commentThreads()
             .list_next(
                 request,
                 response
@@ -104,154 +133,29 @@ def fetch_comments(video_id):
     return comments
 
 
-def fetch_video(video_id):
-
-    res = youtube.videos().list(
-        part="snippet,statistics",
-        id=video_id
-    ).execute()
-
-    return res["items"][0]
-
-
-def clean(text):
-
-    text = re.sub(
-        r"[^\w가-힣 ]",
-        "",
-        text
-    )
-
-    return text
-
-
-def sentiment(comment):
-
-    pos = [
-        "좋",
-        "최고",
-        "재밌",
-        "감동",
-        "행복"
-    ]
-
-    neg = [
-        "별로",
-        "싫",
-        "최악",
-        "실망"
-    ]
-
-    score = 0
-
-    for p in pos:
-        if p in comment:
-            score += 1
-
-    for n in neg:
-        if n in comment:
-            score -= 1
-
-    if score > 0:
-        return "Positive"
-
-    if score < 0:
-        return "Negative"
-
-    return "Neutral"
-
-
-st.markdown("""
-<div class="block">
-
-<div class="title">
-YouTube Comment Intelligence
-</div>
-
-<div class="small">
-Deep analysis of audience reactions
-</div>
-
-</div>
-""",
-unsafe_allow_html=True)
-
-url = st.text_input(
-    "YouTube URL"
-)
-
 if st.button(
-    "Analyze",
-    use_container_width=True
+"Analyze",
+use_container_width=True
 ):
 
     try:
 
-        video_id = get_video_id(url)
-
-        info = fetch_video(video_id)
-
-        comments = fetch_comments(video_id)
-
-        title = (
-            info["snippet"]
-            ["title"]
+        youtube = build(
+            "youtube",
+            "v3",
+            developerKey=api_key
         )
 
-        views = (
-            info["statistics"]
-            ["viewCount"]
+        video = get_video_id(url)
+
+        comments = fetch(
+            youtube,
+            video
         )
 
-        st.subheader(title)
-
-        st.write(
-            f"Views: {views}"
-        )
-
-        df = pd.DataFrame(
-            {
-                "comment": comments
-            }
-        )
-
-        df["sentiment"] = (
-            df["comment"]
-            .apply(
-                sentiment
-            )
-        )
-
-        c1,c2,c3 = st.columns(3)
-
-        with c1:
-            st.metric(
-                "Comments",
-                len(df)
-            )
-
-        with c2:
-            st.metric(
-                "Positive",
-                (
-                    df["sentiment"]
-                    ==
-                    "Positive"
-                ).sum()
-            )
-
-        with c3:
-            st.metric(
-                "Negative",
-                (
-                    df["sentiment"]
-                    ==
-                    "Negative"
-                ).sum()
-            )
-
-        st.markdown(
-            "## Word Cloud"
+        st.metric(
+            "Comments",
+            len(comments)
         )
 
         text = " ".join(
@@ -268,39 +172,38 @@ if st.button(
 
             height=900,
 
-            background_color="white",
+            font_path=None,
 
-            font_path="fonts/NanumGothic.ttf"
+            background_color="white"
 
         ).generate(text)
 
-        fig, ax = plt.subplots(
+        fig,ax = plt.subplots(
             figsize=(14,8)
         )
 
-        ax.imshow(
-            wc,
-            interpolation="bilinear"
-        )
+        ax.imshow(wc)
 
-        ax.axis("off")
+        ax.axis(
+            "off"
+        )
 
         st.pyplot(fig)
 
-        st.markdown(
-            "## Frequent Keywords"
+        words = (
+            Counter(
+                text.split()
+            )
+            .most_common(20)
         )
 
-        words = text.split()
-
-        top = (
-            Counter(words)
-            .most_common(20)
+        st.subheader(
+            "Top Keywords"
         )
 
         st.dataframe(
             pd.DataFrame(
-                top,
+                words,
                 columns=[
                     "Word",
                     "Count"
@@ -309,8 +212,8 @@ if st.button(
             use_container_width=True
         )
 
-        st.markdown(
-            "## Representative Comments"
+        st.subheader(
+            "Representative Comments"
         )
 
         for c in comments[:10]:
@@ -319,4 +222,6 @@ if st.button(
 
     except Exception as e:
 
-        st.error(str(e))
+        st.error(
+            str(e)
+        )
