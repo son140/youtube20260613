@@ -8,256 +8,253 @@ import pandas as pd
 import re
 
 st.set_page_config(
-page_title="YouTube Comment Analyzer",
-layout="wide"
+    page_title="YouTube Comment Analyzer",
+    layout="wide"
 )
 
 st.title("YouTube Comment Analyzer")
+st.caption("YouTube 댓글 분석")
 
 with st.sidebar:
 
-```
-st.header("설정")
-
-API_KEY = st.text_input(
-    "YouTube API Key",
-    type="password"
-)
-```
+    api_key = st.text_input(
+        "YouTube API Key",
+        type="password"
+    )
 
 video_url = st.text_input(
-"유튜브 링크 입력"
+    "YouTube URL"
 )
+
 
 def extract_video_id(url):
 
-```
-if not url:
-    return None
+    if not url:
+        return None
 
-if "youtu.be/" in url:
+    if "youtu.be/" in url:
 
-    return (
-        url
-        .split("youtu.be/")[1]
-        .split("?")[0]
+        return (
+            url
+            .split("youtu.be/")[1]
+            .split("?")[0]
+        )
+
+    parsed = urlparse(url)
+
+    query = parse_qs(
+        parsed.query
     )
 
-parsed = urlparse(
-    url
-)
+    return query.get(
+        "v",
+        [None]
+    )[0]
 
-q = parse_qs(
-    parsed.query
-)
 
-return q.get(
-    "v",
-    [None]
-)[0]
-```
+def fetch_comments(
+    api_key,
+    video_id
+):
 
-def clean(text):
+    youtube = build(
+        "youtube",
+        "v3",
+        developerKey=api_key
+    )
 
-```
-return re.sub(
-    r"[^\w가-힣 ]",
-    "",
-    text
-)
-```
+    comments = []
 
-def fetch_comments(video):
-
-```
-youtube = build(
-    "youtube",
-    "v3",
-    developerKey=API_KEY
-)
-
-comments = []
-
-req = (
-    youtube
-    .commentThreads()
-    .list(
+    request = youtube.commentThreads().list(
         part="snippet",
-        videoId=video,
+        videoId=video_id,
         maxResults=100,
         textFormat="plainText"
     )
-)
 
-while req:
+    while request:
 
-    res = req.execute()
+        response = request.execute()
 
-    for item in res.get(
-        "items",
-        []
-    ):
+        for item in response.get(
+            "items",
+            []
+        ):
 
-        comments.append(
+            comments.append(
 
-            item
-            ["snippet"]
-            ["topLevelComment"]
-            ["snippet"]
-            ["textDisplay"]
+                item[
+                    "snippet"
+                ][
+                    "topLevelComment"
+                ][
+                    "snippet"
+                ][
+                    "textDisplay"
+                ]
+
+            )
+
+        request = (
+
+            youtube
+            .commentThreads()
+            .list_next(
+                request,
+                response
+            )
 
         )
 
-    req = (
-        youtube
-        .commentThreads()
-        .list_next(
-            req,
-            res
-        )
+    return comments
+
+
+def clean(text):
+
+    return re.sub(
+        r"[^\w가-힣 ]",
+        "",
+        text
     )
 
-return comments
-```
 
 if st.button(
-"분석 시작",
-use_container_width=True
+    "분석 시작",
+    use_container_width=True
 ):
-
-```
-try:
-
-    if API_KEY == "":
-
-        st.error(
-            "왼쪽에서 API Key 입력"
-        )
-
-        st.stop()
-
-    if not API_KEY.startswith(
-        "AIza"
-    ):
-
-        st.error(
-            "API Key 형식 오류"
-        )
-
-        st.stop()
-
-    video = extract_video_id(
-        video_url
-    )
-
-    if video is None:
-
-        st.error(
-            "유효한 링크 입력"
-        )
-
-        st.stop()
-
-    comments = fetch_comments(
-        video
-    )
-
-    if len(comments) == 0:
-
-        st.warning(
-            "댓글 없음"
-        )
-
-        st.stop()
-
-    st.success(
-        "분석 완료"
-    )
-
-    st.metric(
-        "댓글 수",
-        len(comments)
-    )
-
-    merged = " ".join(
-        [
-            clean(i)
-            for i in comments
-        ]
-    )
 
     try:
 
-        wc = WordCloud(
-            width=1600,
-            height=800,
-            background_color="white"
-        ).generate(
-            merged
+        if not api_key:
+
+            st.error(
+                "API Key 입력"
+            )
+
+            st.stop()
+
+        if not api_key.startswith(
+            "AIza"
+        ):
+
+            st.error(
+                "API Key 형식 오류"
+            )
+
+            st.stop()
+
+        video_id = extract_video_id(
+            video_url
         )
 
-        fig, ax = plt.subplots()
+        if video_id is None:
 
-        ax.imshow(
-            wc
+            st.error(
+                "유튜브 링크 오류"
+            )
+
+            st.stop()
+
+        comments = fetch_comments(
+            api_key,
+            video_id
         )
 
-        ax.axis(
-            "off"
+        if len(comments) == 0:
+
+            st.warning(
+                "댓글 없음"
+            )
+
+            st.stop()
+
+        st.metric(
+            "댓글 수",
+            len(comments)
+        )
+
+        merged = " ".join(
+            [
+                clean(i)
+                for i
+                in comments
+            ]
+        )
+
+        try:
+
+            wc = WordCloud(
+                width=1500,
+                height=800,
+                background_color="white"
+            ).generate(
+                merged
+            )
+
+            fig, ax = plt.subplots()
+
+            ax.imshow(
+                wc
+            )
+
+            ax.axis(
+                "off"
+            )
+
+            st.subheader(
+                "Word Cloud"
+            )
+
+            st.pyplot(
+                fig
+            )
+
+        except:
+
+            st.warning(
+                "워드클라우드 생성 실패"
+            )
+
+        st.subheader(
+            "Top Keywords"
+        )
+
+        top = (
+            Counter(
+                merged.split()
+            )
+            .most_common(
+                20
+            )
+        )
+
+        st.dataframe(
+
+            pd.DataFrame(
+                top,
+                columns=[
+                    "Word",
+                    "Count"
+                ]
+            ),
+
+            use_container_width=True
+
         )
 
         st.subheader(
-            "워드클라우드"
+            "대표 댓글"
         )
 
-        st.pyplot(
-            fig
+        for c in comments[:10]:
+
+            st.write(
+                "•",
+                c
+            )
+
+    except Exception as e:
+
+        st.error(
+            str(e)
         )
-
-    except:
-
-        st.info(
-            "워드클라우드 생성 생략"
-        )
-
-    st.subheader(
-        "키워드"
-    )
-
-    top = (
-        Counter(
-            merged.split()
-        )
-        .most_common(
-            20
-        )
-    )
-
-    st.dataframe(
-        pd.DataFrame(
-            top,
-            columns=[
-                "단어",
-                "횟수"
-            ]
-        ),
-        use_container_width=True
-    )
-
-    st.subheader(
-        "대표 댓글"
-    )
-
-    for c in comments[:10]:
-
-        st.write(
-            "•",
-            c
-        )
-
-except Exception as e:
-
-    st.error(
-        str(e)
-    )
-```
